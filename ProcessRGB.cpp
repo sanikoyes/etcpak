@@ -116,19 +116,23 @@ static uint64 CheckSolid( const uint8* src )
         ( uint( src[2] & 0xF8 ) );
 }
 
+static void PrepareB23( uint8 b23[2][32], const uint8* src )
+{
+    for( int i=0; i<4; i++ )
+    {
+        memcpy( b23[1]+i*8, src+i*16, 8 );
+        memcpy( b23[0]+i*8, src+i*16+8, 8 );
+    }
+}
+
 uint64 ProcessRGB( const uint8* src )
 {
     uint64 d = CheckSolid( src );
     if( d != 0 ) return d;
 
     uint8 b23[2][32];
+    PrepareB23( b23, src );
     const uint8* b[4] = { src+32, src, b23[0], b23[1] };
-
-    for( int i=0; i<4; i++ )
-    {
-        memcpy( b23[1]+i*8, src+i*16, 8 );
-        memcpy( b23[0]+i*8, src+i*16+8, 8 );
-    }
 
     v3i a[8];
     for( int i=0; i<4; i++ )
