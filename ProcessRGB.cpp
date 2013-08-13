@@ -125,6 +125,15 @@ static void PrepareB23( uint8 b23[2][32], const uint8* src )
     }
 }
 
+static void CalcAverages( v3i a[8], const uint8* b[4] )
+{
+    for( int i=0; i<4; i++ )
+    {
+        a[i] = Average( b[i] );
+    }
+    ProcessAverages( a );
+}
+
 uint64 ProcessRGB( const uint8* src )
 {
     uint64 d = CheckSolid( src );
@@ -135,11 +144,7 @@ uint64 ProcessRGB( const uint8* src )
     const uint8* b[4] = { src+32, src, b23[0], b23[1] };
 
     v3i a[8];
-    for( int i=0; i<4; i++ )
-    {
-        a[i] = Average( b[i] );
-    }
-    ProcessAverages( a );
+    CalcAverages( a, b );
 
     uint err[4] = {};
     for( int i=0; i<4; i++ )
