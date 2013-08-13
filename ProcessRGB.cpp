@@ -134,10 +134,8 @@ static void CalcAverages( v3i a[8], const uint8* b[4] )
     ProcessAverages( a );
 }
 
-static void FindCoefficients( const uint8* data, size_t tidx[2], uint tsel[16][8], const v3i a[8], const uint32 id[16] )
+static void FindCoefficients( const uint8* data, uint64 terr[2][8], uint tsel[16][8], const v3i a[8], const uint32 id[16] )
 {
-    uint64 terr[2][8] = {};
-
     for( size_t i=0; i<16; i++ )
     {
         uint* sel = tsel[i];
@@ -173,9 +171,6 @@ static void FindCoefficients( const uint8* data, size_t tidx[2], uint tsel[16][8
             *ter++ += err;
         }
     }
-
-    tidx[0] = GetLeastError( terr[0], 8 );
-    tidx[1] = GetLeastError( terr[1], 8 );
 }
 
 static uint64 EncodeBlock( uint64 d )
@@ -213,10 +208,14 @@ uint64 ProcessRGB( const uint8* src )
 
     EncodeAverages( d, a, idx );
 
-    size_t tidx[2];
+    uint64 terr[2][8] = {};
     uint tsel[16][8];
     auto id = g_id[idx];
-    FindCoefficients( src, tidx, tsel, a, id );
+    FindCoefficients( src, terr, tsel, a, id );
+
+    size_t tidx[2];
+    tidx[0] = GetLeastError( terr[0], 8 );
+    tidx[1] = GetLeastError( terr[1], 8 );
 
     d |= tidx[0] << 26;
     d |= tidx[1] << 29;
@@ -242,28 +241,30 @@ uint64 ProcessRGB4( const uint8* src )
     v3i a[8];
     CalcAverages( a, b );
 
-    uint err[4] = {};
-    for( int i=0; i<4; i++ )
+    uint64 terr[4][2][8] = {};
+    uint tsel[4][16][8];
+    uint64 gerr[4];
+    for( size_t idx=0; idx<4; idx++ )
     {
-        uint errblock[4] = {};
-        CalcErrorBlock( b[i], errblock );
-        err[i/2] += CalcError( errblock, a[i] );
-        err[2+i/2] += CalcError( errblock, a[i+4] );
+        auto id = g_id[idx];
+        FindCoefficients( src, terr[idx], tsel[idx], a, id );
+        size_t le0 = GetLeastError( terr[idx][0], 8 );
+        size_t le1 = GetLeastError( terr[idx][1], 8 );
+        gerr[idx] = terr[idx][0][le0] + terr[idx][1][le1];
     }
-    size_t idx = GetLeastError( err, 4 );
 
+    size_t idx = GetLeastError( gerr, 4 );
     EncodeAverages( d, a, idx );
 
     size_t tidx[2];
-    uint tsel[16][8];
-    auto id = g_id[idx];
-    FindCoefficients( src, tidx, tsel, a, id );
+    tidx[0] = GetLeastError( terr[idx][0], 8 );
+    tidx[1] = GetLeastError( terr[idx][1], 8 );
 
     d |= tidx[0] << 26;
     d |= tidx[1] << 29;
     for( int i=0; i<16; i++ )
     {
-        uint64 t = tsel[i][tidx[id[i]%2]];
+        uint64 t = tsel[idx][i][tidx[g_id[idx][i]%2]];
         d |= ( t & 0x1 ) << ( i + 32 );
         d |= ( t & 0x2 ) << ( i + 47 );
     }
