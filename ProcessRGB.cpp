@@ -229,3 +229,44 @@ uint64 ProcessRGB( const uint8* src )
 
     return EncodeBlock( d );
 }
+
+uint64 ProcessRGB4( const uint8* src )
+{
+    uint64 d = CheckSolid( src );
+    if( d != 0 ) return d;
+
+    uint8 b23[2][32];
+    PrepareB23( b23, src );
+    const uint8* b[4] = { src+32, src, b23[0], b23[1] };
+
+    v3i a[8];
+    CalcAverages( a, b );
+
+    uint err[4] = {};
+    for( int i=0; i<4; i++ )
+    {
+        uint errblock[4] = {};
+        CalcErrorBlock( b[i], errblock );
+        err[i/2] += CalcError( errblock, a[i] );
+        err[2+i/2] += CalcError( errblock, a[i+4] );
+    }
+    size_t idx = GetLeastError( err, 4 );
+
+    EncodeAverages( d, a, idx );
+
+    size_t tidx[2];
+    uint tsel[16][8];
+    auto id = g_id[idx];
+    FindCoefficients( src, tidx, tsel, a, id );
+
+    d |= tidx[0] << 26;
+    d |= tidx[1] << 29;
+    for( int i=0; i<16; i++ )
+    {
+        uint64 t = tsel[i][tidx[id[i]%2]];
+        d |= ( t & 0x1 ) << ( i + 32 );
+        d |= ( t & 0x2 ) << ( i + 47 );
+    }
+
+    return EncodeBlock( d );
+}
