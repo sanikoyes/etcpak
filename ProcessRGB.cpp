@@ -134,34 +134,10 @@ static void CalcAverages( v3i a[8], const uint8* b[4] )
     ProcessAverages( a );
 }
 
-uint64 ProcessRGB( const uint8* src )
+static void FindCoefficients( const uint8* data, size_t tidx[2], uint tsel[16][8], const v3i a[8], const uint32 id[16] )
 {
-    uint64 d = CheckSolid( src );
-    if( d != 0 ) return d;
-
-    uint8 b23[2][32];
-    PrepareB23( b23, src );
-    const uint8* b[4] = { src+32, src, b23[0], b23[1] };
-
-    v3i a[8];
-    CalcAverages( a, b );
-
-    uint err[4] = {};
-    for( int i=0; i<4; i++ )
-    {
-        uint errblock[4] = {};
-        CalcErrorBlock( b[i], errblock );
-        err[i/2] += CalcError( errblock, a[i] );
-        err[2+i/2] += CalcError( errblock, a[i+4] );
-    }
-    size_t idx = GetLeastError( err, 4 );
-
-    EncodeAverages( d, a, idx );
-
     uint64 terr[2][8] = {};
-    uint tsel[16][8];
-    auto id = g_id[idx];
-    const uint8* data = src;
+
     for( size_t i=0; i<16; i++ )
     {
         uint* sel = tsel[i];
@@ -197,9 +173,50 @@ uint64 ProcessRGB( const uint8* src )
             *ter++ += err;
         }
     }
-    size_t tidx[2];
+
     tidx[0] = GetLeastError( terr[0], 8 );
     tidx[1] = GetLeastError( terr[1], 8 );
+}
+
+static uint64 EncodeBlock( uint64 d )
+{
+    d = ( ( d & 0x00000000FFFFFFFF ) ) |
+        ( ( d & 0xFF00000000000000 ) >> 24 ) |
+        ( ( d & 0x000000FF00000000 ) << 24 ) |
+        ( ( d & 0x00FF000000000000 ) >> 8 ) |
+        ( ( d & 0x0000FF0000000000 ) << 8 );
+
+    return d;
+}
+
+uint64 ProcessRGB( const uint8* src )
+{
+    uint64 d = CheckSolid( src );
+    if( d != 0 ) return d;
+
+    uint8 b23[2][32];
+    PrepareB23( b23, src );
+    const uint8* b[4] = { src+32, src, b23[0], b23[1] };
+
+    v3i a[8];
+    CalcAverages( a, b );
+
+    uint err[4] = {};
+    for( int i=0; i<4; i++ )
+    {
+        uint errblock[4] = {};
+        CalcErrorBlock( b[i], errblock );
+        err[i/2] += CalcError( errblock, a[i] );
+        err[2+i/2] += CalcError( errblock, a[i+4] );
+    }
+    size_t idx = GetLeastError( err, 4 );
+
+    EncodeAverages( d, a, idx );
+
+    size_t tidx[2];
+    uint tsel[16][8];
+    auto id = g_id[idx];
+    FindCoefficients( src, tidx, tsel, a, id );
 
     d |= tidx[0] << 26;
     d |= tidx[1] << 29;
@@ -210,11 +227,5 @@ uint64 ProcessRGB( const uint8* src )
         d |= ( t & 0x2 ) << ( i + 47 );
     }
 
-    d = ( ( d & 0x00000000FFFFFFFF ) ) |
-        ( ( d & 0xFF00000000000000 ) >> 24 ) |
-        ( ( d & 0x000000FF00000000 ) << 24 ) |
-        ( ( d & 0x00FF000000000000 ) >> 8 ) |
-        ( ( d & 0x0000FF0000000000 ) << 8 );
-
-    return d;
+    return EncodeBlock( d );
 }
