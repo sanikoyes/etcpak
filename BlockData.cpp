@@ -6,6 +6,7 @@
 #include "Debug.hpp"
 #include "mmap.hpp"
 #include "ProcessAlpha.hpp"
+#include "ProcessLab.hpp"
 #include "ProcessRGB.hpp"
 #include "Tables.hpp"
 
@@ -123,7 +124,7 @@ void BlockData::Process( const uint8* src, uint32 blocks, size_t offset, uint qu
             m_work.push_back( std::async( [src, dst, blocks, this]() mutable { do { *dst++ = ProcessRGB( src ); src += 4*4*4; } while( --blocks ); } ) );
             break;
         case 1:
-            //m_work.push_back( std::async( [src, dst, blocks, this]{ ProcessBlocksLab( src, dst, blocks ); } ) );
+            m_work.push_back( std::async( [src, dst, blocks, this]() mutable { do { *dst++ = ProcessLab( src ); src += 4*4*4; } while( --blocks ); } ) );
             break;
         default:
             assert( false );

@@ -105,6 +105,7 @@
     <ClCompile Include="..\libpng\pngwutil.c" />
     <ClCompile Include="..\mmap.cpp" />
     <ClCompile Include="..\ProcessAlpha.cpp" />
+    <ClCompile Include="..\ProcessLab.cpp" />
     <ClCompile Include="..\ProcessRGB.cpp" />
     <ClCompile Include="..\Tables.cpp" />
     <ClCompile Include="..\zlib\adler32.c" />
@@ -139,6 +140,7 @@
     <ClInclude Include="..\mmap.hpp" />
     <ClInclude Include="..\ProcessAlpha.hpp" />
     <ClInclude Include="..\ProcessCommon.hpp" />
+    <ClInclude Include="..\ProcessLab.hpp" />
     <ClInclude Include="..\ProcessRGB.hpp" />
     <ClInclude Include="..\Semaphore.hpp" />
     <ClInclude Include="..\Tables.hpp" />
