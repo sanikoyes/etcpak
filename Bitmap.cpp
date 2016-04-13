@@ -71,8 +71,6 @@ Bitmap::Bitmap( const char* fn, uint lines )
         png_read_info( png_ptr, info_ptr );
         png_get_IHDR( png_ptr, info_ptr, &w, &h, &bit_depth, &color_type, &interlace_type, NULL, NULL );
 
-        m_size = v2i( w, h );
-
         png_set_strip_16( png_ptr );
         if( color_type == PNG_COLOR_TYPE_PALETTE )
         {
@@ -114,10 +112,18 @@ Bitmap::Bitmap( const char* fn, uint lines )
 
         DBGPRINT( "Bitmap " << fn << "  " << w << "x" << h );
 
-        assert( w % 4 == 0 );
-        assert( h % 4 == 0 );
+        m_orgsize = v2i( w, h );
+		if(w % 4 != 0)
+			w = w + (4 - w % 4);
+		if(h % 4 != 0)
+			h = h + (4 - h % 4);
+        m_size = v2i( w, h );
+
+        //assert( w % 4 == 0 );
+        //assert( h % 4 == 0 );
 
         m_block = m_data = new uint32[w*h];
+		memset(m_block, 0, w * h * sizeof(uint32));
         m_linesLeft = h / 4;
 
         m_load = std::async( std::launch::async, [this, f, png_ptr, info_ptr]() mutable
@@ -128,6 +134,8 @@ Bitmap::Bitmap( const char* fn, uint lines )
             {
                 for( int j=0; j<4; j++ )
                 {
+					if(i * 4 + j >= m_orgsize.y)
+						break;
                     png_read_rows( png_ptr, (png_bytepp)&ptr, NULL, 1 );
                     ptr += m_size.x;
                 }

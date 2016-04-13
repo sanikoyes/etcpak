@@ -16,6 +16,7 @@
 
 BlockData::BlockData( const char* fn )
     : m_file( fopen( fn, "rb" ) )
+	, m_atlas(NULL)
 {
     assert( m_file );
     fseek( m_file, 0, SEEK_END );
@@ -42,7 +43,31 @@ BlockData::BlockData( const char* fn )
     }
 }
 
-static uint8* OpenForWriting( const char* fn, size_t len, const v2i& size, FILE** f, int levels )
+typedef struct {
+	uint32 tag;
+	uint32 flags;
+	uint32 pixel_formats[2];
+	uint32 colour_space;
+	uint32 channel_type;
+	uint32 height;
+	uint32 width;
+	uint32 depth;
+	uint32 num_surfs;
+	uint32 num_faces;
+	uint32 mipmaps;
+	uint32 reversed;
+} PVRHeader;
+
+typedef struct {
+	uint8 tag[6];
+	uint16 format;
+	uint16 tex_width;
+	uint16 tex_height;
+	uint16 orig_width;
+	uint16 orig_height;
+} PKMHeader;
+
+static uint8* OpenForWriting( const char* fn, size_t len, const v2i& size, FILE** f, int levels, bool atlas, bool etc_pkm)
 {
     *f = fopen( fn, "wb+" );
     assert( *f );
@@ -54,20 +79,30 @@ static uint8* OpenForWriting( const char* fn, size_t len, const v2i& size, FILE*
     auto ret = (uint8*)mmap( nullptr, len, PROT_WRITE, MAP_SHARED, fileno( *f ), 0 );
     auto dst = (uint32*)ret;
 
-    *dst++ = 0x03525650;  // version
-    *dst++ = 0;           // flags
-    *dst++ = 6;           // pixelformat[0], value 22 is needed for etc2
-    *dst++ = 0;           // pixelformat[1]
-    *dst++ = 0;           // colourspace
-    *dst++ = 0;           // channel type
-    *dst++ = size.y;      // height
-    *dst++ = size.x;      // width
-    *dst++ = 1;           // depth
-    *dst++ = 1;           // num surfs
-    *dst++ = 1;           // num faces
-    *dst++ = levels;      // mipmap count
-    *dst++ = 0;           // metadata size
-
+	if(etc_pkm) {
+		PKMHeader *h = (PKMHeader *) ret;
+		memcpy(h->tag, "PKM 10", sizeof(h->tag));
+		h->format = levels - 1;
+		h->orig_height = _byteswap_ushort(atlas ? size.y * 2: size.y);
+		h->orig_width = _byteswap_ushort(size.x);
+		h->tex_height = h->orig_height;
+		h->tex_width = h->orig_width;
+	} else {
+		PVRHeader *h = (PVRHeader *) ret;
+		h->tag = 0x03525650;
+		h->flags = 0;
+		h->pixel_formats[0] = 6; // pixelformat[0], value 22 is needed for etc2
+		h->pixel_formats[1] = 0;
+		h->colour_space = 0;
+		h->channel_type = 0;
+		h->height = atlas ? size.y * 2 : size.y;
+		h->width = size.x;
+		h->depth = 1;
+		h->num_surfs = 1;
+		h->num_faces = 1;
+		h->mipmaps = levels;
+		h->reversed = 0;
+	}
     return ret;
 }
 
@@ -86,10 +121,11 @@ static int AdjustSizeForMipmaps( const v2i& size, int levels )
     return len;
 }
 
-BlockData::BlockData( const char* fn, const v2i& size, bool mipmap )
+BlockData::BlockData( const char* fn, const v2i& size, bool mipmap, bool atlas, bool etc_pkm )
     : m_size( size )
-    , m_dataOffset( 52 )
-    , m_maplen( 52 + m_size.x*m_size.y/2 )
+    , m_dataOffset( etc_pkm ? sizeof(PKMHeader) : sizeof(PVRHeader) )
+    , m_maplen( (etc_pkm ? sizeof(PKMHeader) : sizeof(PVRHeader)) + m_size.x*m_size.y/2 )
+	, m_atlas(NULL)
 {
     assert( m_size.x%4 == 0 && m_size.y%4 == 0 );
 
@@ -104,8 +140,13 @@ BlockData::BlockData( const char* fn, const v2i& size, bool mipmap )
         DBGPRINT( "Number of mipmaps: " << levels );
         m_maplen += AdjustSizeForMipmaps( size, levels );
     }
+	if(atlas)
+		m_maplen += (m_maplen - m_dataOffset);
 
-    m_data = OpenForWriting( fn, m_maplen, m_size, &m_file, levels );
+    m_data = OpenForWriting( fn, m_maplen, m_size, &m_file, levels, atlas, etc_pkm );
+
+	if(atlas)
+		m_atlas = m_data + (m_dataOffset + m_size.x*m_size.y/2);
 }
 
 BlockData::BlockData( const v2i& size, bool mipmap )
@@ -113,6 +154,7 @@ BlockData::BlockData( const v2i& size, bool mipmap )
     , m_dataOffset( 52 )
     , m_file( nullptr )
     , m_maplen( 52 + m_size.x*m_size.y/2 )
+	, m_atlas(NULL)
 {
     assert( m_size.x%4 == 0 && m_size.y%4 == 0 );
     if( mipmap )
@@ -185,7 +227,11 @@ void BlockData::Process( const uint32* src, uint32 blocks, size_t offset, size_t
     uint32 buf[4*4];
     int w = 0;
 
-    auto dst = ((uint64*)( m_data + m_dataOffset )) + offset;
+	uint64 *dst;
+	if(type == Channels::Alpha && m_atlas)
+		dst = ((uint64*)( m_atlas )) + offset;
+	else 
+		dst = ((uint64*)( m_data + m_dataOffset )) + offset;
 
     uint64 (*func)(uint8*);
 
@@ -459,19 +505,22 @@ void DecodePlanar(uint64 block, uint32* l[4])
 
 BitmapPtr BlockData::Decode()
 {
-    auto ret = std::make_shared<Bitmap>( m_size );
+	v2i size = m_size;
+	if(m_atlas)
+		size.y *= 2;
+    auto ret = std::make_shared<Bitmap>( size );
 
     uint32* l[4];
     l[0] = ret->Data();
-    l[1] = l[0] + m_size.x;
-    l[2] = l[1] + m_size.x;
-    l[3] = l[2] + m_size.x;
+    l[1] = l[0] + size.x;
+    l[2] = l[1] + size.x;
+    l[3] = l[2] + size.x;
 
     const uint64* src = (const uint64*)( m_data + m_dataOffset );
 
-    for( int y=0; y<m_size.y/4; y++ )
+    for( int y=0; y<size.y/4; y++ )
     {
-        for( int x=0; x<m_size.x/4; x++ )
+        for( int x=0; x<size.x/4; x++ )
         {
             uint64 d = *src++;
 
@@ -583,10 +632,10 @@ BitmapPtr BlockData::Decode()
             }
         }
 
-        l[0] += m_size.x * 3;
-        l[1] += m_size.x * 3;
-        l[2] += m_size.x * 3;
-        l[3] += m_size.x * 3;
+        l[0] += size.x * 3;
+        l[1] += size.x * 3;
+        l[2] += size.x * 3;
+        l[3] += size.x * 3;
     }
 
     return ret;

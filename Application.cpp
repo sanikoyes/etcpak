@@ -50,6 +50,8 @@ void Usage()
     fprintf( stderr, "  -d          enable dithering\n" );
     fprintf( stderr, "  -debug      dissect ETC texture\n" );
     fprintf( stderr, "  -etc2       enable ETC2 mode\n" );
+    fprintf( stderr, "  -pkm        output to PKM(.pkm) format\n" );
+    fprintf( stderr, "  -atlas      make pixel+alpha atlas(etc1)\n" );
 }
 
 int main( int argc, char** argv )
@@ -65,6 +67,8 @@ int main( int argc, char** argv )
     bool dither = false;
     bool debug = false;
     bool etc2 = false;
+	bool etc_pkm = false;
+	bool atlas = false;
 
     if( argc < 2 )
     {
@@ -109,10 +113,18 @@ int main( int argc, char** argv )
         {
             debug = true;
         }
+		else if( CSTR( "-pkm" ) )
+		{
+			etc_pkm = true;
+		}
         else if( CSTR( "-etc2" ) )
         {
             etc2 = true;
         }
+		else if( CSTR( "-atlas" ) )
+		{
+			atlas = true;
+		}
         else
         {
             Usage();
@@ -166,11 +178,19 @@ int main( int argc, char** argv )
         DataProvider dp( argv[1], mipmap );
         auto num = dp.NumberOfParts();
 
-        auto bd = std::make_shared<BlockData>( "out.pvr", dp.Size(), mipmap );
+		_wmkdir(L"output");
+
+		std::string fn = argv[1];
+		fn = "output/" + fn.substr(0, fn.rfind("."));
+		std::string ext = ".pvr";
+		if(etc_pkm)
+			ext = ".pkm";
+
+        auto bd = std::make_shared<BlockData>( (fn + ext).c_str(), dp.Size(), mipmap, atlas, etc_pkm );
         BlockDataPtr bda;
-        if( alpha && dp.Alpha() )
+        if( alpha && dp.Alpha() && !atlas )
         {
-            bda = std::make_shared<BlockData>( "outa.pvr", dp.Size(), mipmap );
+            bda = std::make_shared<BlockData>( (fn + "_alpha" + ext).c_str(), dp.Size(), mipmap, atlas, etc_pkm );
         }
 
         if( bda )
@@ -199,6 +219,12 @@ int main( int argc, char** argv )
                 {
                     bd->Process( part.src, part.width / 4 * part.lines, part.offset, part.width, Channels::RGB, dither, etc2 );
                 } );
+				if(atlas) {
+					TaskDispatch::Queue( [part, i, &bd, etc2]()
+					{
+						bd->Process( part.src, part.width / 4 * part.lines, part.offset, part.width, Channels::Alpha, false, etc2 );
+					} );
+				}
             }
         }
 
@@ -224,11 +250,11 @@ int main( int argc, char** argv )
         if( save & 0x2 )
         {
             auto out = bd->Decode();
-            out->Write( "out.png" );
+            out->Write( (fn + ".png").c_str() );
             if( bda )
             {
                 auto outa = bda->Decode();
-                outa->Write( "outa.png" );
+                outa->Write( (fn + "_alpha.png").c_str() );
             }
         }
 

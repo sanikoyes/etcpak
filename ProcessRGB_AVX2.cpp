@@ -21,6 +21,9 @@
 #  define VS_VECTORCALL
 #endif
 
+#define noexcept
+#define alignas(n) __declspec(align(n))
+
 namespace
 {
 

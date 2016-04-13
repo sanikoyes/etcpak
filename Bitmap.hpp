@@ -38,7 +38,7 @@ protected:
     uint32* m_block;
     uint m_lines;
     uint m_linesLeft;
-    v2i m_size;
+    v2i m_size, m_orgsize;
     bool m_alpha;
     Semaphore m_sema;
     std::mutex m_lock;

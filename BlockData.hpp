@@ -16,7 +16,7 @@ class BlockData
 {
 public:
     BlockData( const char* fn );
-    BlockData( const char* fn, const v2i& size, bool mipmap );
+    BlockData( const char* fn, const v2i& size, bool mipmap, bool atlas, bool etc_pkm );
     BlockData( const v2i& size, bool mipmap );
     ~BlockData();
 
@@ -27,6 +27,7 @@ public:
 
 private:
     uint8* m_data;
+	uint8* m_atlas;
     v2i m_size;
     size_t m_dataOffset;
     FILE* m_file;
