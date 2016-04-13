@@ -14,28 +14,29 @@
 #include "Tables.hpp"
 #include "TaskDispatch.hpp"
 
-BlockData::BlockData( const char* fn )
-    : m_file( fopen( fn, "rb" ) )
-	, m_atlas(NULL)
-{
-    assert( m_file );
-    fseek( m_file, 0, SEEK_END );
-    m_maplen = ftell( m_file );
-    fseek( m_file, 0, SEEK_SET );
-    m_data = (uint8*)mmap( nullptr, m_maplen, PROT_READ, MAP_SHARED, fileno( m_file ), 0 );
+#include "squish/squish.h"
 
-    auto data32 = (uint32*)m_data;
+BlockData::BlockData( const char* fn )
+{
+	m_etc1.file = fopen(fn, "rb");
+    assert( m_etc1.file );
+    fseek( m_etc1.file, 0, SEEK_END );
+    m_maplen = ftell( m_etc1.file );
+    fseek( m_etc1.file, 0, SEEK_SET );
+    m_etc1.data = (uint8*)mmap( nullptr, m_maplen, PROT_READ, MAP_SHARED, fileno( m_etc1.file ), 0 );
+
+    auto data32 = (uint32*)m_etc1.data;
     if( *data32 == 0x03525650 )
     {
         m_size.y = *(data32+6);
         m_size.x = *(data32+7);
-        m_dataOffset = 52 + *(data32+12);
+        m_etc1.offset = 52 + *(data32+12);
     }
     else if( *data32 == 0x58544BAB )
     {
         m_size.x = *(data32+9);
         m_size.y = *(data32+10);
-        m_dataOffset = 17 + *(data32+15);
+        m_etc1.offset = 17 + *(data32+15);
     }
     else
     {
@@ -67,9 +68,57 @@ typedef struct {
 	uint16 orig_height;
 } PKMHeader;
 
-static uint8* OpenForWriting( const char* fn, size_t len, const v2i& size, FILE** f, int levels, bool atlas, bool etc_pkm)
+typedef struct {
+	char tag[4];
+	uint32 hsize;
+	uint32 flags;
+	uint32 height;
+	uint32 width;
+	uint32 pitch;
+	uint32 depth;
+	uint32 mipmaps;
+	uint32 dummy[11];
+
+	uint32 format_size;
+	uint32 format_flags;
+	uint32 format_fourcc;
+	uint32 format_rgb_bits;
+	uint32 format_red_mask;
+	uint32 format_green_mask;
+	uint32 format_blue_mask;
+	uint32 format_alpha_mask;
+
+	uint32 caps_1;
+	uint32 caps_2;
+	uint32 caps_ddsx;
+
+	uint32 skip1;
+	uint32 skip2;
+
+} DDSHeader;
+
+typedef enum {
+	FormatPvr,
+	FormatPkm,
+	FormatDds,
+} eFormat;
+
+static uint8* OpenForWriting( const char* fn_, size_t len, const v2i& size, FILE** f, int levels, bool atlas, eFormat fmt)
 {
-    *f = fopen( fn, "wb+" );
+	std::string fn = fn_;
+	switch(fmt) {
+	case FormatPvr:
+		fn += ".pvr";
+		break;
+	case FormatPkm:
+		fn += ".pkm";
+		break;
+	case FormatDds:
+		fn += ".dds";
+		break;
+	}
+
+    *f = fopen( fn.c_str(), "wb+" );
     assert( *f );
     fseek( *f, len - 1, SEEK_SET );
     const char zero = 0;
@@ -79,7 +128,9 @@ static uint8* OpenForWriting( const char* fn, size_t len, const v2i& size, FILE*
     auto ret = (uint8*)mmap( nullptr, len, PROT_WRITE, MAP_SHARED, fileno( *f ), 0 );
     auto dst = (uint32*)ret;
 
-	if(etc_pkm) {
+	switch(fmt) {
+	case FormatPkm:
+	{
 		PKMHeader *h = (PKMHeader *) ret;
 		memcpy(h->tag, "PKM 10", sizeof(h->tag));
 		h->format = levels - 1;
@@ -87,7 +138,10 @@ static uint8* OpenForWriting( const char* fn, size_t len, const v2i& size, FILE*
 		h->orig_width = _byteswap_ushort(size.x);
 		h->tex_height = h->orig_height;
 		h->tex_width = h->orig_width;
-	} else {
+	}
+	break;
+	case FormatPvr:
+	{
 		PVRHeader *h = (PVRHeader *) ret;
 		h->tag = 0x03525650;
 		h->flags = 0;
@@ -102,6 +156,36 @@ static uint8* OpenForWriting( const char* fn, size_t len, const v2i& size, FILE*
 		h->num_faces = 1;
 		h->mipmaps = levels;
 		h->reversed = 0;
+	}
+	break;
+	case FormatDds:
+	{
+		DDSHeader *h = (DDSHeader *) ret;
+		strncpy(h->tag, "DDS ", 4);
+		h->hsize = 124;
+		h->flags = 0x000A1007;
+		h->height = atlas ? size.y * 2 : size.y;
+		h->width = size.x;
+		h->pitch = h->width * h->height / 2;
+		h->depth = 0;
+		h->mipmaps = levels;
+		memset(h->dummy, 0, sizeof(h->dummy));
+		h->format_size = 0x20;
+		h->format_flags = 5;
+		h->format_fourcc = 0x31545844; // DXT1
+		h->format_rgb_bits = 0;
+		h->format_red_mask = 0;
+		h->format_green_mask = 0;
+		h->format_blue_mask = 0;
+		h->format_alpha_mask = 0;
+
+		h->caps_1 = 0x00401008;
+		h->caps_2 = 0;
+		h->caps_ddsx = 0;
+		h->skip1 = 0;
+		h->skip2 = 0;
+	}
+	break;
 	}
     return ret;
 }
@@ -121,12 +205,11 @@ static int AdjustSizeForMipmaps( const v2i& size, int levels )
     return len;
 }
 
-BlockData::BlockData( const char* fn, const v2i& size, bool mipmap, bool atlas, bool etc_pkm )
+BlockData::BlockData( const char* fn, const v2i& size, bool mipmap, bool atlas, bool etc_pkm, bool dds )
     : m_size( size )
-    , m_dataOffset( etc_pkm ? sizeof(PKMHeader) : sizeof(PVRHeader) )
     , m_maplen( (etc_pkm ? sizeof(PKMHeader) : sizeof(PVRHeader)) + m_size.x*m_size.y/2 )
-	, m_atlas(NULL)
 {
+    m_etc1.offset = etc_pkm ? sizeof(PKMHeader) : sizeof(PVRHeader);
     assert( m_size.x%4 == 0 && m_size.y%4 == 0 );
 
     uint32 cnt = m_size.x * m_size.y / 16;
@@ -140,41 +223,46 @@ BlockData::BlockData( const char* fn, const v2i& size, bool mipmap, bool atlas, 
         DBGPRINT( "Number of mipmaps: " << levels );
         m_maplen += AdjustSizeForMipmaps( size, levels );
     }
+	int data_size = m_maplen;
 	if(atlas)
-		m_maplen += (m_maplen - m_dataOffset);
+		m_maplen += (m_maplen - m_etc1.offset);
 
-    m_data = OpenForWriting( fn, m_maplen, m_size, &m_file, levels, atlas, etc_pkm );
-
+    m_etc1.data = OpenForWriting( fn, m_maplen, m_size, &m_etc1.file, levels, atlas, (etc_pkm ? FormatPkm : FormatPvr) );
 	if(atlas)
-		m_atlas = m_data + (m_dataOffset + m_size.x*m_size.y/2);
+		m_etc1.atlas = m_etc1.data + data_size;
+
+	if(dds) {
+		m_dds.offset = sizeof(DDSHeader);
+	    m_dds.data = OpenForWriting( fn, m_maplen, m_size, &m_etc1.file, levels, atlas, FormatDds );
+		if(atlas)
+			m_dds.atlas = m_dds.data + (data_size - m_etc1.offset + sizeof(DDSHeader));
+	}
 }
 
 BlockData::BlockData( const v2i& size, bool mipmap )
     : m_size( size )
-    , m_dataOffset( 52 )
-    , m_file( nullptr )
     , m_maplen( 52 + m_size.x*m_size.y/2 )
-	, m_atlas(NULL)
 {
+    m_etc1.offset = sizeof(PVRHeader);
     assert( m_size.x%4 == 0 && m_size.y%4 == 0 );
     if( mipmap )
     {
         const int levels = NumberOfMipLevels( size );
         m_maplen += AdjustSizeForMipmaps( size, levels );
     }
-    m_data = new uint8[m_maplen];
+    m_etc1.data = new uint8[m_maplen];
 }
 
 BlockData::~BlockData()
 {
-    if( m_file )
+    if( m_etc1.file )
     {
-        munmap( m_data, m_maplen );
-        fclose( m_file );
+        munmap( m_etc1.data, m_maplen );
+        fclose( m_etc1.file );
     }
     else
     {
-        delete[] m_data;
+        delete[] m_etc1.data;
     }
 }
 
@@ -222,16 +310,28 @@ static uint64 _f_rgb_etc2_dither_avx2( uint8* ptr )
     return ProcessRGB_ETC2_AVX2( ptr );
 }
 
+#pragma pack(push,1)
+typedef struct {
+	uint8 r, g, b, a;
+} Pixel;
+#pragma pack(pop)
+
 void BlockData::Process( const uint32* src, uint32 blocks, size_t offset, size_t width, Channels type, bool dither, bool etc2 )
 {
     uint32 buf[4*4];
     int w = 0;
 
-	uint64 *dst;
-	if(type == Channels::Alpha && m_atlas)
-		dst = ((uint64*)( m_atlas )) + offset;
-	else 
-		dst = ((uint64*)( m_data + m_dataOffset )) + offset;
+	uint64 *dst, *dst_dds;
+	if(type == Channels::Alpha && m_etc1.atlas) {
+		dst = ((uint64*)( m_etc1.atlas )) + offset;
+		if(m_dds.atlas)
+			dst_dds = ((uint64*)( m_dds.atlas )) + offset;
+	}
+	else {
+		dst = ((uint64*)( m_etc1.data + m_etc1.offset )) + offset;
+		if(m_dds.data)
+			dst_dds = ((uint64*)( m_dds.data + m_dds.offset )) + offset;
+	}
 
     uint64 (*func)(uint8*);
 
@@ -264,20 +364,22 @@ void BlockData::Process( const uint32* src, uint32 blocks, size_t offset, size_t
 
         do
         {
+			const uint32 *src_dds = src;
+
             auto ptr = buf;
             for( int x=0; x<4; x++ )
             {
                 uint a = *src >> 24;
-                *ptr++ = a | ( a << 8 ) | ( a << 16 );
+                *ptr++ = a | ( a << 8 ) | ( a << 16 ) | 0xFF000000;
                 src += width;
                 a = *src >> 24;
-                *ptr++ = a | ( a << 8 ) | ( a << 16 );
+                *ptr++ = a | ( a << 8 ) | ( a << 16 ) | 0xFF000000;
                 src += width;
                 a = *src >> 24;
-                *ptr++ = a | ( a << 8 ) | ( a << 16 );
+                *ptr++ = a | ( a << 8 ) | ( a << 16 ) | 0xFF000000;
                 src += width;
                 a = *src >> 24;
-                *ptr++ = a | ( a << 8 ) | ( a << 16 );
+                *ptr++ = a | ( a << 8 ) | ( a << 16 ) | 0xFF000000;
                 src -= width * 3 - 1;
             }
             if( ++w == width/4 )
@@ -287,6 +389,21 @@ void BlockData::Process( const uint32* src, uint32 blocks, size_t offset, size_t
             }
 
             *dst++ = func( (uint8*)buf );
+
+			if(dst_dds) {
+
+				auto ptr = buf;
+				for(int y = 0; y < 4; y ++) {
+
+					for(int x = 0; x < 4; x++) {
+
+						uint32 a = *src_dds++ >> 24;
+						*ptr++ = a | (a << 8) | (a << 16) | 0xFF000000;
+					}
+					src_dds += width - 4;
+				}
+				squish::Compress((squish::u8*)buf, dst_dds++, squish::kDxt1);
+			}
         }
         while( --blocks );
     }
@@ -347,6 +464,8 @@ void BlockData::Process( const uint32* src, uint32 blocks, size_t offset, size_t
 
         do
         {
+			const uint32 *src_dds = src;
+
             auto ptr = buf;
             for( int x=0; x<4; x++ )
             {
@@ -364,8 +483,27 @@ void BlockData::Process( const uint32* src, uint32 blocks, size_t offset, size_t
                 src += width * 3;
                 w = 0;
             }
-
             *dst++ = func( (uint8*)buf );
+
+			if(dst_dds) {
+
+				auto ptr = buf;
+				for(int y = 0; y < 4; y ++) {
+
+					for(int x = 0; x < 4; x++) {
+
+						Pixel& s = *(Pixel *) src_dds++;
+						Pixel p;
+						p.r = s.b;
+						p.g = s.g;
+						p.b = s.r;
+						p.a = 255;
+						*ptr++ = *(uint32 *)&p;
+					}
+					src_dds += width - 4;
+				}
+				squish::Compress((squish::u8*)buf, dst_dds++, squish::kDxt1);
+			}
         }
         while( --blocks );
     }
@@ -506,7 +644,7 @@ void DecodePlanar(uint64 block, uint32* l[4])
 BitmapPtr BlockData::Decode()
 {
 	v2i size = m_size;
-	if(m_atlas)
+	if(m_etc1.atlas)
 		size.y *= 2;
     auto ret = std::make_shared<Bitmap>( size );
 
@@ -516,7 +654,7 @@ BitmapPtr BlockData::Decode()
     l[2] = l[1] + size.x;
     l[3] = l[2] + size.x;
 
-    const uint64* src = (const uint64*)( m_data + m_dataOffset );
+    const uint64* src = (const uint64*)( m_etc1.data + m_etc1.offset );
 
     for( int y=0; y<size.y/4; y++ )
     {
@@ -647,7 +785,7 @@ BitmapPtr BlockData::Decode()
 void BlockData::Dissect()
 {
     auto size = m_size / 4;
-    const uint64* data = (const uint64*)( m_data + m_dataOffset );
+    const uint64* data = (const uint64*)( m_etc1.data + m_etc1.offset );
 
     auto src = data;
 

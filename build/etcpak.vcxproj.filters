@@ -10,6 +10,9 @@
     <Filter Include="lz4">
       <UniqueIdentifier>{881b2f0b-26cb-4a37-b5a1-b2eabec8db59}</UniqueIdentifier>
     </Filter>
+    <Filter Include="squish">
+      <UniqueIdentifier>{de45fd73-469e-47f2-9c06-bcdee8cfd857}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\zlib\adler32.c">
@@ -117,6 +120,33 @@
     <ClCompile Include="..\lz4\lz4.c">
       <Filter>lz4</Filter>
     </ClCompile>
+    <ClCompile Include="..\squish\alpha.cpp">
+      <Filter>squish</Filter>
+    </ClCompile>
+    <ClCompile Include="..\squish\clusterfit.cpp">
+      <Filter>squish</Filter>
+    </ClCompile>
+    <ClCompile Include="..\squish\colourblock.cpp">
+      <Filter>squish</Filter>
+    </ClCompile>
+    <ClCompile Include="..\squish\colourfit.cpp">
+      <Filter>squish</Filter>
+    </ClCompile>
+    <ClCompile Include="..\squish\colourset.cpp">
+      <Filter>squish</Filter>
+    </ClCompile>
+    <ClCompile Include="..\squish\maths.cpp">
+      <Filter>squish</Filter>
+    </ClCompile>
+    <ClCompile Include="..\squish\rangefit.cpp">
+      <Filter>squish</Filter>
+    </ClCompile>
+    <ClCompile Include="..\squish\singlecolourfit.cpp">
+      <Filter>squish</Filter>
+    </ClCompile>
+    <ClCompile Include="..\squish\squish.cpp">
+      <Filter>squish</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\zlib\crc32.h">
@@ -199,10 +229,60 @@
     <ClInclude Include="..\lz4\lz4.h">
       <Filter>lz4</Filter>
     </ClInclude>
+    <ClInclude Include="..\squish\algorithm.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="..\squish\alpha.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="..\squish\clusterfit.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="..\squish\colourblock.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="..\squish\colourfit.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="..\squish\colourset.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="..\squish\config.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="..\squish\maths.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="..\squish\rangefit.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="..\squish\simd.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="..\squish\simd_float.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="..\squish\simd_sse.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="..\squish\simd_ve.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="..\squish\singlecolourfit.h">
+      <Filter>squish</Filter>
+    </ClInclude>
+    <ClInclude Include="..\squish\squish.h">
+      <Filter>squish</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Object Include="..\zlib\inffasx64.obj">
       <Filter>zlib</Filter>
     </Object>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\squish\singlecolourlookup.inl">
+      <Filter>squish</Filter>
+    </None>
   </ItemGroup>
 </Project>

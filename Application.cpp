@@ -69,6 +69,7 @@ int main( int argc, char** argv )
     bool etc2 = false;
 	bool etc_pkm = false;
 	bool atlas = false;
+	bool dds = false;
 
     if( argc < 2 )
     {
@@ -124,6 +125,10 @@ int main( int argc, char** argv )
 		else if( CSTR( "-atlas" ) )
 		{
 			atlas = true;
+		}
+		else if( CSTR( "-dds" ) )
+		{
+			dds = true;
 		}
         else
         {
@@ -182,15 +187,12 @@ int main( int argc, char** argv )
 
 		std::string fn = argv[1];
 		fn = "output/" + fn.substr(0, fn.rfind("."));
-		std::string ext = ".pvr";
-		if(etc_pkm)
-			ext = ".pkm";
 
-        auto bd = std::make_shared<BlockData>( (fn + ext).c_str(), dp.Size(), mipmap, atlas, etc_pkm );
+        auto bd = std::make_shared<BlockData>( fn.c_str(), dp.Size(), mipmap, atlas, etc_pkm, dds );
         BlockDataPtr bda;
         if( alpha && dp.Alpha() && !atlas )
         {
-            bda = std::make_shared<BlockData>( (fn + "_alpha" + ext).c_str(), dp.Size(), mipmap, atlas, etc_pkm );
+            bda = std::make_shared<BlockData>( (fn + "_alpha").c_str(), dp.Size(), mipmap, atlas, etc_pkm, dds );
         }
 
         if( bda )
