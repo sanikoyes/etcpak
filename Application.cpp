@@ -16,6 +16,9 @@
 #include "TaskDispatch.hpp"
 #include "Timing.hpp"
 
+#define WIN32_LEARN_AND_MEAN
+#include <Windows.h>
+
 struct DebugCallback_t : public DebugLog::Callback
 {
     void OnDebugMessage( const char* msg ) override
@@ -41,6 +44,7 @@ void Usage()
 #endif
     fprintf( stderr, "  Options:\n" );
     fprintf( stderr, "  -v          view mode (loads pvr/ktx file, decodes it and saves to png)\n" );
+    fprintf( stderr, "  -t dir      set output folder\n" );
     fprintf( stderr, "  -o 1        output selection (sum of: 1 - save pvr file; 2 - save png file)\n" );
     fprintf( stderr, "                note: pvr files are written regardless of this option\n" );
     fprintf( stderr, "  -a          disable alpha channel processing\n" );
@@ -52,6 +56,7 @@ void Usage()
     fprintf( stderr, "  -etc2       enable ETC2 mode\n" );
     fprintf( stderr, "  -pkm        output to PKM(.pkm) format\n" );
     fprintf( stderr, "  -atlas      make pixel+alpha atlas(etc1)\n" );
+    fprintf( stderr, "  -dds        export DDS texture\n" );
 }
 
 int main( int argc, char** argv )
@@ -70,6 +75,7 @@ int main( int argc, char** argv )
 	bool etc_pkm = false;
 	bool atlas = false;
 	bool dds = false;
+	const char *target_dir = "output";
 
     if( argc < 2 )
     {
@@ -84,6 +90,12 @@ int main( int argc, char** argv )
         {
             viewMode = true;
         }
+		else if( CSTR( "-t" ))
+		{
+			i++;
+			target_dir = argv[i];
+			assert(target_dir != NULL);
+		}
         else if( CSTR( "-o" ) )
         {
             i++;
@@ -183,10 +195,10 @@ int main( int argc, char** argv )
         DataProvider dp( argv[1], mipmap );
         auto num = dp.NumberOfParts();
 
-		_wmkdir(L"output");
+		CreateDirectoryA(target_dir, NULL);
 
 		std::string fn = argv[1];
-		fn = "output/" + fn.substr(0, fn.rfind("."));
+		fn = std::string(target_dir) + "/" + fn.substr(0, fn.rfind("."));
 
         auto bd = std::make_shared<BlockData>( fn.c_str(), dp.Size(), mipmap, atlas, etc_pkm, dds );
         BlockDataPtr bda;
