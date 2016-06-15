@@ -207,9 +207,10 @@ static int AdjustSizeForMipmaps( const v2i& size, int levels )
 
 BlockData::BlockData( const char* fn, const v2i& size, bool mipmap, bool atlas, bool etc_pkm, bool dds )
     : m_size( size )
-    , m_maplen( (etc_pkm ? sizeof(PKMHeader) : sizeof(PVRHeader)) + m_size.x*m_size.y/2 )
 {
-    m_etc1.offset = etc_pkm ? sizeof(PKMHeader) : sizeof(PVRHeader);
+	size_t hsize = (etc_pkm ? sizeof(PKMHeader) : sizeof(PVRHeader));
+    m_etc1.offset = hsize;
+    m_maplen = m_size.x*m_size.y/2;
     assert( m_size.x%4 == 0 && m_size.y%4 == 0 );
 
     uint32 cnt = m_size.x * m_size.y / 16;
@@ -223,20 +224,20 @@ BlockData::BlockData( const char* fn, const v2i& size, bool mipmap, bool atlas, 
         DBGPRINT( "Number of mipmaps: " << levels );
         m_maplen += AdjustSizeForMipmaps( size, levels );
     }
-	int data_size = m_maplen;
 	if(atlas)
-		m_maplen += (m_maplen - m_etc1.offset);
+		m_maplen *= 2;
 
-    m_etc1.data = OpenForWriting( fn, m_maplen, m_size, &m_etc1.file, levels, atlas, (etc_pkm ? FormatPkm : FormatPvr) );
+    m_etc1.data = OpenForWriting( fn, hsize + m_maplen, m_size, &m_etc1.file, levels, atlas, (etc_pkm ? FormatPkm : FormatPvr) );
 	if(atlas)
-		m_etc1.atlas = m_etc1.data + data_size;
+		m_etc1.atlas = m_etc1.data + (hsize + m_maplen / 2);
 
 	if(dds) {
 		m_dds.offset = sizeof(DDSHeader);
-	    m_dds.data = OpenForWriting( fn, m_maplen, m_size, &m_etc1.file, levels, atlas, FormatDds );
+	    m_dds.data = OpenForWriting( fn, sizeof(DDSHeader) + m_maplen, m_size, &m_etc1.file, levels, atlas, FormatDds );
 		if(atlas)
-			m_dds.atlas = m_dds.data + (data_size - m_etc1.offset + sizeof(DDSHeader));
+			m_dds.atlas = m_dds.data + (sizeof(DDSHeader) + m_maplen / 2);
 	}
+	m_maplen += hsize;
 }
 
 BlockData::BlockData( const v2i& size, bool mipmap )
